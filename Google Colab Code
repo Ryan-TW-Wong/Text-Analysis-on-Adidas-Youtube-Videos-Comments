@@ -1,0 +1,898 @@
+from googleapiclient.discovery import build
+import google.oauth2.credentials
+
+API_KEY = "AIzaSyCLbXUm8Jjb8OrnR49urZLokWFNzU-CUMQ"
+API_NAME = "youtube"
+API_VERSION = "v3"
+
+youtube = build(API_NAME, API_VERSION)
+creds = google.oauth2.credentials.Credentials ("AIzaSyCLbXUm8Jjb8OrnR49urZLokWFNzU-CUMQ")
+
+from googleapiclient.discovery import build
+import pandas as pd
+from google.colab import files, drive
+import getpass
+
+api_key = getpass.getpass('Please enter your Youtube API key: ')
+playlist_ids = ['PLM-bRdh5zDg-EfoaqwUIoAE7HmF4Opg1I']
+youtube = build('youtube', 'v3', developerKey=api_key)
+
+# PLM-bRdh5zDg_uaXW3HgTBtDWb2db5PeRa is the sixth (6th) playlist on adidas official youtube channel with the name "Inside Three Stripes" 35 videos
+
+def get_all_video_ids_from_playlists (youtube, playlist_ids):
+    all_videos = []
+
+    for playlist_id in playlist_ids:
+        next_page_token = None
+
+        # Fetch videos from the current playlist
+        while True:
+            playlist_request =  youtube.playlistItems().list(
+                part='contentDetails',
+                playlistId=playlist_id,
+                maxResults=50,
+                pageToken=next_page_token)
+            playlist_response = playlist_request.execute()
+
+            all_videos += [item['contentDetails']['videoId'] for item in
+                          playlist_response['items']]
+
+            next_page_token = playlist_response.get('nextPageToken')
+
+            if next_page_token is None:
+                break
+
+    return all_videos
+
+# Fetch all video IDs from the specified playlists
+video_ids = get_all_video_ids_from_playlists (youtube, playlist_ids)
+
+# Now you can pass video_ids to the next function
+#next_function(video_ids)
+
+# Function to get replies for a specific comment
+def get_replies (youtube, parent_id, video_id): # Added video_id as an argument
+    replies = []
+    next_page_token = None
+
+    while True:
+        reply_request = youtube.comments().list(
+            part="snippet",
+            parentId=parent_id,
+            textFormat="plainText",
+            maxResults=100,
+            pageToken=next_page_token
+        )
+        reply_response = reply_request.execute()
+
+        for item in reply_response['items']:
+            comment = item['snippet']
+            replies.append({
+                'Timestamp': comment['publishedAt'],
+                'Username': comment ['authorDisplayName'],
+                'VideoID': video_id,
+                'Comment': comment['textDisplay'],
+                'Date': comment['updatedAt'] if 'updatedAt' in comment else comment['publishedAt']
+        })
+
+        next_page_token=reply_response.get('nextPageToken')
+        if not next_page_token:
+            break
+    return replies
+
+# Function to get all comments (including replies) for a single video
+def get_comments_for_video (youtube, video_id):
+    all_comments = []
+    next_page_token = None
+
+    while True:
+        comment_request = youtube.commentThreads().list(
+            part="snippet",
+            videoId=video_id,
+            pageToken=next_page_token,
+            textFormat="plainText",
+            maxResults=100,
+        )
+
+        comment_response = comment_request.execute()
+
+        for item in comment_response['items']:
+            top_comment = item['snippet']['topLevelComment']['snippet']
+            all_comments.append({
+                'Timestamp': top_comment['publishedAt'],
+                'Username': top_comment['authorDisplayName'],
+                'VideoID': video_id, # Directly using video_id from function parameter
+                'Comment': top_comment['textDisplay'],
+                'Date': top_comment['updatedAt'] if 'updatedAt' in top_comment else top_comment['publishedAt']
+            })
+
+            # Fetch replies if there are any
+            if item['snippet']['totalReplyCount'] > 0:
+                all_comments.extend(get_replies (youtube, item['snippet']['topLevelComment']['id'], video_id))
+
+        next_page_token=comment_response.get('nextPageToken')
+        if not next_page_token:
+            break
+
+    return all_comments
+
+
+all_comments = []
+
+for video_id in video_ids:
+    video_comments = get_comments_for_video(youtube, video_id)
+    all_comments.extend(video_comments)
+
+comments_df = pd.DataFrame(all_comments)
+
+# print(comments_df)
+
+# NOTE FIRST SEPERATION POINT | ABOVE IS WEEK 2 TUTORIAL 2 ON DEALING WITH PLAYLISTS | BELOW IS WEEK 3 TUTORIAL 3 ON DEALING WITH VIDEOS #
+
+from googleapiclient.discovery import build
+import google.oauth2.credentials
+
+#Part 1 - Authentication & Comment Retrieval from YouTube
+#Part 1.1 - Authentication & Variables Initialisation
+
+API_KEY = "AIzaSyCLbXUm8Jjb8OrnR49urZLokWFNzU-CUMQ"
+API_NAME = "youtube"
+API_VERSION = "v3"
+
+next_page_token = None
+desired_comment_count = 1000
+
+youtube = build (API_NAME, API_VERSION, developerKey = API_KEY)
+creds = google.oauth2.credentials.Credentials ("AIzaSyCLbXUm8Jjb8OrnR49urZLokWFNzU-CUMQ")
+
+# Retrieve comment information from YouTube's API for the video with the ID
+response = youtube.commentThreads().list(
+     part="snippet",
+     videoId="FzaS0V_FCrI",
+     textFormat="plainText"
+).execute()
+
+comments = []
+for item in response["items"]:
+      comment = item["snippet"]["topLevelComment"]["snippet"]["textDisplay"]
+      comments.append(comment)
+
+#Part 1.2 - Comments Retrieval
+#Retrieve comment information from YouTube's API for the video with the ID
+comments = []
+#While the length of comment list is less than 1000
+while len(comments) < desired_comment_count:
+#Repeat the process of retrieving comment
+        response = youtube.commentThreads().list(
+            part = "snippet",
+            videoId = "FzaS0V_FCrI",
+            textFormat = "plainText",
+            maxResults = 100,
+            pageToken = next_page_token
+        ).execute()
+        for item in response["items"]:
+            comment = item["snippet"]["topLevelComment"]["snippet"]["textDisplay"]
+            comments.append(comment)
+
+#Ask YouTube API is there any nextPageToken
+        next_page_token = response.get("nextPageToken")
+#If the token value = (there is no more next page), exit the loop
+        if not next_page_token:
+                  break
+        print (f"Comments retrieved per round: {len (comments)}")
+
+print (f"Total comments retrieved: {len (comments)}")
+
+#Saving the scraped data into Excel file
+import pandas as pd
+
+#Convert comments to DataFrame
+df = pd.DataFrame (comments, columns = ["Comments"])
+
+#Save DataFrame to Excel file
+output_file = "comments.xlsx"
+df.to_excel (output_file, index = False)
+print (f"Comments saved to {output_file} successfully.")
+
+#Part 2 - Removing Missing Data
+# Creating a scenario of empty string/missing data
+for i in range (10): #Using for loop to append 10 empty strings
+        abc = ""
+        comments.append(abc)
+
+#Identifying missing data
+print("Missing Data:")
+missing_data_count = 0
+
+for comment in comments:
+    if comment != "":
+        missing_data_count += 1
+
+print (missing_data_count)
+
+#Dealing & removing missing data
+comments_without_missing_data = []
+
+for comment in comments:
+    if comment != "":
+        comments_without_missing_data.append(comment)
+
+#Identifying missing data in the new list
+print("Missing Data:")
+missing_data_count = 0
+
+for comment in comments_without_missing_data:
+    if comment == "":
+        missing_data_count += 1 #shorthand assignment --> increase the count by 1 for every correct if
+
+print(missing_data_count)
+
+#Part 3 Text Cleaning & Preprocessing
+from nltk.corpus import stopwords
+from nltk.stem import PorterStemmer
+from nltk.tokenize import word_tokenize
+import re
+
+#If you have error running, then you need to include this part
+import nltk
+nltk.download ('stopwords')
+nltk.download('punkt')
+
+#Removing stopwords, special characters & punctuation
+stop_words =  set(stopwords.words ("english"))
+filtered_tokens = []
+
+for comment in comments_without_missing_data:
+    #Remove special characters & punctuation
+    comment = re.sub (r" [^a-zA-Z0-9\s]", "", comment)
+
+    #Tokenize the comment
+    tokens = word_tokenize(comment)
+
+    #Filter tokens based on stopwords & length
+    for token in tokens:
+        if token.lower() not in stop_words and len(token) > 1:
+            filtered_tokens.append(token)
+
+#Stemming
+stemmer = PorterStemmer()
+stemmed_tokens = [stemmer.stem (token) for token in filtered_tokens] #shorthand method of for loop
+
+print("Filter Tokens: ", filtered_tokens)
+print("Stemmed Tokens: ", stemmed_tokens)
+
+#Visualisation
+from nltk.probability import FreqDist
+import matplotlib.pyplot as plt
+from wordcloud import WordCloud
+
+freq_dist = FreqDist(stemmed_tokens)
+word_freq = dict(freq_dist.most_common (10))
+
+if len(word_freq) > 0:
+#Plotting word frequency
+            plt.figure(figsize = (10, 6))
+            plt.bar(list(word_freq.keys()),
+            word_freq.values())
+            plt.xticks(rotation = 90) #Rotate x-axis labels by 90 degrees
+            plt.title('Word Frequency')
+            plt.xlabel('Word')
+            plt.ylabel('Frequency')
+            plt.tight_layout() #Adjust layout for better visibility
+            plt.show()
+
+#Word cloud visualisation
+text=''.join(stemmed_tokens)
+wordcloud = WordCloud ().generate (text)
+plt.imshow(wordcloud, interpolation = 'bilinear')
+plt.axis ("off")
+plt.show()
+
+#Topic Modelling (Extra)
+#Import the necessary modules
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.decomposition import LatentDirichletAllocation
+
+#Initialise the CountVectorizer
+vectorizer = CountVectorizer()
+
+#Fit the vectorizer with preprocessed comments
+token_matrix = vectorizer.fit_transform(filtered_tokens)
+
+#Initialise the LatentDirichletAllocation model
+num_topics = 5 #Specify the number of topics
+lda_model = LatentDirichletAllocation(n_components = num_topics, random_state = 42)
+
+#Fit the model with the token matrix
+lda_model.fit(token_matrix)
+
+#Print the top words for each topic
+feature_names = vectorizer.get_feature_names_out()
+for topic_idx, topic in enumerate (lda_model.components_):
+    top_words = [feature_names[i] for i in topic.argsort()[:-10 - 1:-1]]
+    print (f"Topic{topic_idx +1}: {' '.join(top_words)}")
+
+#dealing with missing data
+abc = ""
+
+comments.append(abc)
+
+# Identifying missing data
+print("Missing Data:")
+missing_data_count = 0
+
+for comment in comments:
+    if comment == "":
+        missing_data_count += 1
+
+print(missing_data_count)
+
+# Dealing with missing data
+comments_without_missing_data = []
+
+for comment in comments:
+    if comment != "":
+        comments_without_missing_data.append(comment)
+
+#Part 3 Text Cleaning & Preprocessing
+from nltk.corpus import stopwords
+from nltk.stem import PorterStemmer
+from nltk.tokenize import word_tokenize
+import re
+
+#If you have error running, then you need to include this part
+import nltk
+nltk.download ('stopwords')
+nltk.download('punkt')
+
+# Removing stopwords, special characters, and punctuation
+stop_words = set(stopwords.words("english"))
+filtered_tokens = []
+
+for comment in comments:
+    # Remove special characters and punctuation
+    comment = re.sub(r"[^a-zA-Z0-9\s]", "", comment)
+
+    # Tokenize the comment
+    tokens = word_tokenize(comment)
+
+    # Filter tokens based on stopwords and length
+    for token in tokens:
+        if token.lower() not in stop_words and len(token) > 1:
+            filtered_tokens.append(token)
+
+# Normalizing text values into lowercase
+comments_lower = []
+
+# Iterate over each comment in comments_without_missing_data
+for comment in comments_without_missing_data:
+    # Convert the comment to lowercase and append it to comments_lower list
+    comments_lower.append(comment.lower())
+
+# Spam patterns
+spam_patterns = [
+    "check out my channel",
+    "free giveaway",
+    "get rich quick",
+    "click the link",
+    "subscribe to my channel",
+    "earn money online",
+    "make $1000 a day",
+    "lose weight fast",
+    "buy followers",
+    "watch my video"
+]
+
+# Bot patterns
+bot_patterns = [
+    "I'm a bot",
+    "automated message",
+    "subscribe to my channel",
+    "great video, check out mine",
+    "earn money online",
+    "free followers",
+    "get rich quick",
+    "comment below for a shoutout",
+    "follow for follow",
+    "click the link in my bio"
+]
+
+link_pattern = r"http\S+"
+
+cleaned_comments = []
+
+for comment in comments_without_missing_data:
+
+    # Remove punctuation and special characters
+    comment = re.sub(r"[^a-zA-Z0-9\s]", "", comment)
+
+    # Remove links
+    comment = re.sub(link_pattern, "", comment)
+
+    # Remove spam patterns
+    for pattern in spam_patterns:
+          comment = comment.replace(pattern, "")
+
+    # Remove bot patterns
+    for pattern in bot_patterns:
+          comment = comment.replace(pattern, "")
+
+    cleaned_comments.append(comment)
+
+cleaned_without_missing_data_comments = []
+
+for comment in cleaned_comments:
+    # Check if the comment is empty or contains only whitespace
+    if comment.strip():
+        cleaned_without_missing_data_comments.append(comment)
+
+# Dealing with missing data
+comments_without_missing_data = []
+
+for comment in comments:
+    if comment != "":
+        comments_without_missing_data.append(comment)
+
+print("Cleaned Comments:", len(cleaned_without_missing_data_comments))
+
+from transformers import T5Tokenizer, T5ForConditionalGeneration
+
+model_name = "t5-base"
+
+tokenizer = T5Tokenizer.from_pretrained(model_name)
+model = T5ForConditionalGeneration.from_pretrained(model_name)
+
+
+# Text normalization using T5 model
+def normalize_with_machine_learning(text):
+
+  # Tokenize input text
+  input_ids = tokenizer.encode(text, return_tensors="pt")
+
+  # Generate normalized output
+  output = model.generate(input_ids)
+  normalized_text = tokenizer.decode(output[0], skip_special_tokens = True)
+
+  return normalized_text
+
+normalized_comments = [normalize_with_machine_learning(comment) for comment in cleaned_without_missing_data_comments]
+
+import random
+
+#Assuming you have a list of comments called 'comments'
+sample_size = 100
+
+# Take a random sample of 100 comments
+random_sample = random.sample(comments, sample_size)
+
+for comment in cleaned_without_missing_data_comments:
+
+     # Tokenize the comment
+     tokens = word_tokenize(comment)
+
+     # Filter tokens based on stopwords and length
+     for token in tokens:
+        if token.lower() not in stop_words and len(token) > 1:
+            filtered_tokens.append(token)
+
+from nltk.stem import WordNetLemmatizer
+
+stop_words = set(stopwords.words("english"))
+filtered_tokens = []
+lemmatizer = WordNetLemmatizer()
+
+# Lemmatization
+lemmatized_tokens = [lemmatizer.lemmatize(token) for token in filtered_tokens]
+
+print("Filtered Tokens:", filtered_tokens)
+print("Lemmatized Tokens:", lemmatized_tokens)
+print("Normalized Comments:", normalized_comments)
+
+
+#Libraries
+import nltk
+nltk.download('stopwords')
+!pip install pyspellchecker # Install the spellchecker module
+from googleapiclient.discovery import build #Authentication
+import re #Preprocessing
+from nltk.corpus import stopwords #Preprocessing - Stopwords
+from spellchecker import SpellChecker #Spell Checker
+from nltk.stem import WordNetLemmatizer #Lemmatizer
+from nltk.tokenize import word_tokenize #Tokenizer
+from nltk.probability import FreqDist #Frequency Distribution
+import matplotlib.pyplot as plt #Word Frequency Visual
+from wordcloud import WordCloud #Wordcloud Visual
+from sklearn.feature_extraction.text import CountVectorizer #Topic Modelling
+from sklearn.decomposition import LatentDirichletAllocation #Topic Modelling
+
+#Implementing and Running the T5 Model
+from transformers import T5Tokenizer, T5ForConditionalGeneration
+
+model_name = "t5-base"
+
+tokenizer = T5Tokenizer.from_pretrained(model_name, model_max_length = 512)
+model = T5ForConditionalGeneration.from_pretrained (model_name)
+
+unique_lemmatized_tokens = []
+def normalize_with_machine_learning (text):
+    input_ids = tokenizer.encode(text, return_tensors="pt")
+
+    # Call model.generate with the defined input_ids
+    output= model.generate(input_ids)
+
+    normalized_text = tokenizer.decode(output[0], skip_special_tokens=True)
+
+    return normalized_text
+
+    normalized_comments = [normalize_with_machine_learning (comment) for comment in cleaned_without_missing_data_comments]
+
+import torch
+
+def normalize_with_machine_learning (tokenized_text):
+    input_ids = tokenizer.encode(tokenized_text, return_tensors="pt")
+    output = model.generate(input_ids)
+    normalized_text = tokenizer.decode(output[0], skip_special_tokens=True)
+    return normalized_text
+
+normalized_comments = [normalize_with_machine_learning (unique_lemmatized_tokens) for comment in unique_lemmatized_tokens]
+
+def normalize_with_machine_learning(tokenized_text, max_sequence_length):
+    input_ids = tokenizer.encode(tokenized_text, return_tensors="pt")
+
+    #split the input into smaller chunks
+    num_chunks = (input_ids.size(1) - 1) //max_sequence_length + 1
+    outputs = []
+    for i in range (num_chunks):
+
+        start_idx = i * max_sequence_length
+        end_idx = (i+1)* max_sequence_length
+        input_chunk = input_ids[:,start_idx: end_idx]
+        output_chunk = model.generate (input_chunk, max_new_tokens = max_sequence_length)
+        outputs.append(output_chunk)
+
+        #combine the outputs from the smaller chunks
+        combined_output = torch.cat (outputs, dim=1)
+        normalized_text = tokenizer.decode(combined_output[0], skip_special_tokens=True)
+
+        return normalized_text
+
+        normalized_comments = [
+            normalize_with_machine_learning (comment,max_sequence_length=512)
+            for comment in unique_lemmatized_tokens
+]
+
+import nltk
+nltk.download('punkt')
+nltk.download('wordnet')
+#spell checker
+#note if you dont have spellchecker module, you go and pip install
+
+from spellchecker import SpellChecker # Import the SpellChecker class
+
+spell_checker = SpellChecker() # Create an instance of SpellChecker, avoiding name collision
+for comment in cleaned_without_missing_data_comments:
+
+    words = comment.split()
+    corrected_words = []
+    corrected_comments = []
+    for word in words:
+        corrected_word = spell_checker.correction (word) # Use the instance for spell checking
+        if corrected_word is not None:
+            corrected_words.append(corrected_word)
+            corrected_comment = ' '.join(corrected_words)
+            corrected_comments.append(corrected_comment)
+
+corrected_comments2 = []
+
+#perform lemmatization instead of stemming
+for comment in corrected_comments2:
+
+    #tokenize the comments
+    tokens = word_tokenize (comment)
+
+    for token in tokens:
+        if token not in stop_words and len(token) > 3:
+            filtered_tokens.append(token)
+
+#Lemmatization Process
+lemmatized_tokens = [lemmatizer.lemmatize (token) for token in filtered_tokens]
+
+#remove duplicated characters in each comment terms
+import re
+pattern = r"(.)\1{2,}"
+corrected_comments2 = [re.sub(pattern, r"\1\1", comment) for comment in corrected_comments]
+
+#Create a set of unique lemmatized tokens
+unique_lemmatized_tokens=list(set(lemmatized_tokens))
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+from nltk.stem import WordNetLemmatizer
+from gensim.models import Word2Vec
+from keras.models import Sequential
+from keras.layers import LSTM, Dense, Embedding
+from tensorflow.keras.preprocessing.text import Tokenizer
+from keras.preprocessing.sequence import pad_sequences
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from keras.utils import to_categorical
+cleaned_comments2 = corrected_comments2
+
+# Tokenize and preprocess the text data
+nltk.download("stopwords")
+nltk.download("punkt")
+nltk.download("wordnet")
+stop_words = set (stopwords.words ("english"))
+lemmatizer = WordNetLemmatizer()
+
+def preprocess_text(text):
+    words = word_tokenize(text.lower())
+    words = [lemmatizer.lemmatize (word) for word in words if word.isalnum() and word not in stop_words]
+    return " ".join(words)
+
+cleaned_comments2 = [preprocess_text(comment) for comment in cleaned_comments2]
+
+# Generate word embeddings using Word2Vec
+sentences = [word_tokenize(comment) for comment in cleaned_comments2]
+word2vec_model = Word2Vec (sentences, vector_size=100, window=5, min_count=1, sg=1)
+
+# Convert text data to word embeddings
+tokenizer = Tokenizer()
+tokenizer.fit_on_texts(cleaned_comments2)
+sequences = tokenizer.texts_to_sequences(cleaned_comments2)
+word_index = tokenizer.word_index
+data_padded = pad_sequences(sequences)
+
+# Split data into training and testing sets
+X_train, X_test, _, _ = train_test_split(data_padded, np.zeros(len(data_padded)), test_size=0.2, random_state=42)
+
+# Build and train the sentiment analysis model
+model_sentiment = Sequential()
+model_sentiment.add(Embedding (len(word_index) + 1, 100, input_length=data_padded.shape[1]))
+model_sentiment.add(LSTM(100))
+model_sentiment.add(Dense (1, activation="sigmoid"))
+model_sentiment.compile(loss="binary_crossentropy", optimizer="adam", metrics=["accuracy"])
+model_sentiment.summary()
+
+history = model_sentiment.fit(X_train, np.zeros(len(X_train)), epochs=10, batch_size=64, validation_data= (X_test, np.zeros(len(X_test))))
+
+# Assuming you have a list of topic labels for cleaned_comments2
+import itertools
+
+def generate_labels (num_labels):
+    base_label = "Label_"
+    labels = [base_label + str(i) for i in range(1, num_labels+1)]
+    return labels
+
+num_labels_to_generate = len(cleaned_comments2)
+labels_list = generate_labels(num_labels_to_generate)
+
+topic_labels = labels_list # Or any other list with the correct labels
+label_encoder = LabelEncoder()
+y_labels = label_encoder.fit_transform(topic_labels)
+num_classes = len(label_encoder.classes_)
+y_labels_one_hot = to_categorical(y_labels, num_classes=num_classes)
+
+# Now you can split the data:
+X_train_topic, X_test_topic, y_train_topic, y_test_topic = train_test_split(
+    data_padded, y_labels_one_hot, test_size=0.2, random_state=42
+)
+
+# Build and train the topic classification model
+model_topic = Sequential()
+model_topic.add(Embedding(len(word_index) + 1, 100, input_length=data_padded.shape[1]))
+model_topic.add(LSTM(100))
+model_topic.add(Dense(num_classes, activation="softmax"))
+model_topic.compile(loss="categorical_crossentropy", optimizer="adam", metrics=["accuracy"])
+model_topic.summary()
+
+history_topic = model_topic.fit(X_train_topic, y_train_topic, epochs=10, batch_size=64, validation_data= (X_test_topic, y_test_topic))
+
+# Evaluate the models on test data and perform social media analytics
+sentiment_predictions = model_sentiment.predict(data_padded)
+topic_predictions = model_topic.predict(data_padded)
+predicted_topics = label_encoder.inverse_transform(np.argmax (topic_predictions, axis=1))
+
+# Visualize the training history and results
+plt.figure(figsize=(12, 6))
+
+# Plot sentiment analysis training history
+plt.subplot(1, 2, 1)
+plt.plot(history.history["accuracy"], label="Training Accuracy")
+plt.plot(history.history["val_accuracy"], label="Validation Accuracy")
+plt.xlabel("Epoch")
+plt.ylabel("Accuracy")
+plt.title("Sentiment Analysis Model Training History")
+plt.legend()
+
+# Plot topic classification training history
+plt.subplot(1, 2, 2)
+plt.plot(history_topic.history["accuracy"], label="Training Accuracy")
+plt.plot(history_topic.history["val_accuracy"], label="Validation Accuracy")
+plt.xlabel("Epoch")
+plt.ylabel("Accuracy")
+plt.title("Topic Classification Model Training History")
+plt.legend()
+
+plt.tight_layout()
+plt.show()
+
+# Display sentiment analysis and topic classification results
+sentiment_labels = ["Negative", "Neutral", "Positive"]
+predicted_sentiments = [sentiment_labels [int (np.round(x))] for x in sentiment_predictions]
+new_data = pd.DataFrame({"Comment": cleaned_comments2, "Sentiment": predicted_sentiments, "Topic": predicted_topics})
+print(new_data)
+
+import datetime
+import matplotlib.pyplot as plt
+from googleapiclient.discovery import build
+from textblob import TextBlob
+
+API_KEY = "AIzaSyCLbXUm8Jjb8OrnR49urZLokWFNzU-CUMQ"
+API_NAME = "youtube"
+API_VERSION = "v3"
+
+youtube = build (API_NAME, API_VERSION, developerKey=API_KEY)
+
+desired_comment_count = 100
+
+# Retrieve comments with timestamps using YouTube Data API
+comments_with_timestamps = []
+
+next_page_token= None
+
+# Retrieve comments with timestamps using YouTube Data API
+comments_with_timestamps = []
+
+next_page_token = None
+
+while len(comments_with_timestamps) < desired_comment_count:
+    response = youtube.commentThreads().list(
+        part="snippet",
+        videoId="FzaS0V_FCrI",
+        textFormat="plainText",
+        maxResults=100,
+        pageToken=next_page_token
+    ).execute()
+
+    for item in response["items"]:
+        comment = item["snippet"]["topLevelComment"]["snippet"]["textDisplay"]
+        timestamp = item["snippet"]["topLevelComment"]["snippet"]["publishedAt"]
+        comments_with_timestamps.append({
+            "comment": comment,
+            "timestamp": timestamp
+        })
+
+    next_page_token= response.get("nextPageToken")
+
+    if not next_page_token:
+        break
+
+# Convert timestamps to datetime objects
+datetime_objects = [
+    datetime.datetime.strptime(comment["timestamp"], "%Y-%m-%dT%H:%M:%SZ")
+    for comment in comments_with_timestamps
+]
+
+#Convert timestamps to the desired format
+formatted_timestamps = [datetime_object.strftime("%Y-%m-%dT%H:%M:%SZ")
+                        for datetime_object in datetime_objects]
+
+#Update the comments_with_timestamps list with formatted timestamps
+for i, comment in enumerate(comments_with_timestamps):
+    comment["timestamp"] = formatted_timestamps[i]
+
+#Perform sentiment analysis on comments using TextBlob
+sentiments = []
+
+for comment in comments_with_timestamps:
+    text = comment["comment"]
+    blob = TextBlob(text)
+    sentiment = blob.sentiment.polarity
+    sentiments.append(sentiment)
+
+for i, item in enumerate(comments_with_timestamps):
+    item['sentiments'] = sentiments[i]
+
+#Extract sentiment values from the comments_with_timestamps dictionary
+sentiments = [entry['sentiments'] for entry in comments_with_timestamps]
+
+# Count the occurrences of different sentiment categories
+sentiment_counts = {
+    "Positive": len([sentiment for sentiment in sentiments if sentiment > 0]),
+    "Negative": len([sentiment for sentiment in sentiments if sentiment < 0]),
+    "Neutral": len([sentiment for sentiment in sentiments if sentiment == 0])
+}
+
+labels = list(sentiment_counts.keys())
+values = list(sentiment_counts.values())
+
+plt.bar(labels, values)
+plt.xlabel("Sentiment")
+plt.ylabel("Count")
+plt.title("Sentiment Analysis")
+plt.xticks(rotation=45)
+plt.show()
+
+#heatmap over time
+import numpy as np
+
+#Extract the timestamps and sentiment values from the dictionaries
+timestamps = [datetime.datetime.strptime(d['timestamp'], "%Y-%m-%dT%H:%M:%SZ") for d in
+comments_with_timestamps]
+sentiments = [d['sentiments'] for d in comments_with_timestamps]
+
+#Sort the timestamps in ascending order
+sorted_indices = np.argsort(timestamps)
+sorted_timestamps = np.array(timestamps) [sorted_indices]
+sorted_sentiments = np.array( sentiments) [sorted_indices]
+
+#Convert the timestamps to relative time in seconds
+relative_timestamps = [(t - sorted_timestamps[0]).total_seconds() for t in sorted_timestamps]
+
+# Create a 2D numpy array where each row represents a timestamp and each column represents a sentiment value
+sentiment_array = np.column_stack((relative_timestamps, sorted_sentiments))
+
+#Plot the heatmap
+plt.imshow(sentiment_array, cmap='coolwarm', aspect='auto')
+plt.colorbar()
+plt.xlabel('Time')
+plt.ylabel('Sentiment')
+plt.title('Sentiment Analysis over Time')
+plt.xticks(rotation=45)
+plt.yticks([0], ['Sentiment'])
+plt.show()
+
+#Histogram
+# Extract sentiments from comments_with_timestamps
+sentiments_val = [data['sentiments'] for data in comments_with_timestamps]
+
+#Histogram of Sentiment
+plt.hist(sentiments_val, bins=5, alpha=0.7, rwidth=0.85)
+plt.xlabel('Sentiment')
+plt.ylabel('Count')
+plt.title('Sentiment Distribution')
+plt.show()
+
+#wordcloud
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
+
+#Word Cloud of Comments
+comments_text = ' '.join([comment["comment"] for comment in comments_with_timestamps])
+
+# Generate word cloud for all words
+wordcloud_all = WordCloud(width=800, height=400).generate(comments_text)
+
+#Generate positive and negative word clouds
+positive_comments = [comment["comment"] for comment, sentiment in zip(comments_with_timestamps, sentiments) if sentiment > 0]
+negative_comments = [comment["comment"] for comment, sentiment in zip(comments_with_timestamps, sentiments) if sentiment < 0]
+positive_text = ' '.join(positive_comments)
+negative_text = ' '.join(negative_comments)
+
+#Plot normal word cloud
+wordcloud = WordCloud().generate(comments_text)
+plt.imshow(wordcloud, interpolation='bilinear')
+plt.axis("off")
+plt.show()
+
+# Create subplots for word clouds
+fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+#Plot positive word cloud
+wordcloud_positive = WordCloud (width=400,height=400).generate(positive_text)
+axes[0].imshow(wordcloud_positive, interpolation="bilinear")
+axes[0].axis("off")
+axes[0].set_title('Positive Word Cloud')
+
+#Plot negative word cloud
+wordcloud_negative = WordCloud (width=400, height=480).generate(negative_text)
+axes[1].imshow(wordcloud_negative, interpolation="bilinear")
+axes[1].axis("off")
+axes[1].set_title('Negative Word Cloud')
+
+plt.tight_layout()
+plt.show()
